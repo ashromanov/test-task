@@ -1,0 +1,18 @@
+{
+  "checked_at": "2026-10-06T13:12:51.291381+00:00",
+  "url": "https://payments.2-26-150-15.sslip.io",
+  "deployed_revision": "d129ff3d517b35fb59e67421fa15567c4edc9e7d",
+  "checks": {
+    "public_openapi": 200,
+    "missing_api_key": 401,
+    "health": 200,
+    "create": 202,
+    "idempotent_replay": 202,
+    "payload_conflict": 409,
+    "webhook_delivered": true
+  },
+  "payment_id": "bea6f603-48c1-4bde-b18c-bc21bc52918b",
+  "status": "succeeded",
+  "processed_at": "2026-10-06T13:13:54.491207Z",
+  "webhook_delivered_at": "2026-10-06T13:13:54.508150Z"
+}

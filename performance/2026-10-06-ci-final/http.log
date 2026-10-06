@@ -1,0 +1,23 @@
+[2026-10-06 13:09:11,670] runnervm8df0l/INFO/locust.main: Starting Locust 2.46.7
+[2026-10-06 13:09:11,670] runnervm8df0l/INFO/locust.main: Run time limit set to 60 seconds
+[2026-10-06 13:09:11,671] runnervm8df0l/INFO/locust.runners: Ramping to 20 users at a rate of 5.00 per second
+[2026-10-06 13:09:14,673] runnervm8df0l/INFO/locust.runners: All users spawned: {"PaymentsUser": 20} (20 total users)
+[2026-10-06 13:10:11,015] runnervm8df0l/INFO/locust.main: --run-time limit reached, shutting down
+[2026-10-06 13:10:11,075] runnervm8df0l/INFO/locust.main: Shutting down (exit code 0)
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+GET      GET payment                                                                    19982     0(0.00%) |     27       4     180     27 |  336.55        0.00
+POST     POST create (setup)                                                               20     0(0.00%) |     45      19      98     34 |    0.34        0.00
+POST     POST idempotent replay                                                         19982     0(0.00%) |     30       6     162     30 |  336.55        0.00
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                     39984     0(0.00%) |     28       4     180     28 |  673.45        0.00
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+GET      GET payment                                                                            27     28     30     34     46     58     67     80    120    150    180  19982
+POST     POST create (setup)                                                                    34     40     87     89     94     99     99     99     99     99     99     20
+POST     POST idempotent replay                                                                 30     32     34     37     50     59     71     84    120    150    160  19982
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                             28     31     33     36     49     59     70     82    120    150    180  39984
+
