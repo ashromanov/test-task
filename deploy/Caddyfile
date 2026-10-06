@@ -1,0 +1,5 @@
+# Add this block to the existing Caddyfile; do not replace other virtual hosts.
+payments.2-26-150-15.sslip.io {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+}

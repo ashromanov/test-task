@@ -1,0 +1,33 @@
+name: Optional load test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.12.23"
+          python-version: "3.14.6"
+      - run: uv sync --frozen --group load
+      - name: Start isolated stack
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yaml -f compose.test.yaml up --build -d --wait
+          mkdir -p performance/ci
+      - name: HTTP and sustained processing load with evidence
+        run: uv run --group load python scripts/benchmark.py --output performance/ci
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: payments-load-${{ github.sha }}
+          path: performance/ci/
+      - if: always()
+        run: docker compose -f compose.yaml -f compose.test.yaml down -v

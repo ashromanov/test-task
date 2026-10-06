@@ -1,0 +1,11 @@
+services:
+  api:
+    environment:
+      DEMO_MODE: "true"
+    labels:
+      org.opencontainers.image.revision: ${DEPLOY_REVISION:-local}
+  consumer:
+    environment:
+      WEBHOOK_ALLOWED_HOSTS: ""
+    labels:
+      org.opencontainers.image.revision: ${DEPLOY_REVISION:-local}

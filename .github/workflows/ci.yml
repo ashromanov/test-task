@@ -1,0 +1,69 @@
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: payments-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.12.23"
+          python-version: "3.14.6"
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check payments migrations tests load scripts
+      - run: uv run ruff format --check payments migrations tests load scripts
+      - run: uv run python -m unittest tests.test_unit -v
+      - name: Start integration environment
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yaml -f compose.test.yaml up --build -d --wait
+      - name: PostgreSQL and RabbitMQ integration tests
+        run: uv run python -m unittest tests.test_integration -v
+      - name: Container diagnostics
+        if: failure()
+        run: docker compose -f compose.yaml -f compose.test.yaml logs --tail 100
+      - name: Stop integration environment
+        if: always()
+        run: docker compose -f compose.yaml -f compose.test.yaml down -v
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Deploy tested sources over SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/payments
+          chmod 600 ~/.ssh/payments
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          tar -czf - Dockerfile .dockerignore pyproject.toml uv.lock alembic.ini \
+            payments migrations compose.yaml compose.prod.yaml | \
+            ssh -i ~/.ssh/payments -o IdentitiesOnly=yes -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 \
+              "root@$DEPLOY_HOST" "deploy $GITHUB_SHA"
+      - name: Verify public documentation
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            https://payments.2-26-150-15.sslip.io/openapi.json > /dev/null

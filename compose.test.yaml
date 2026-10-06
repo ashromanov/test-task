@@ -1,0 +1,31 @@
+# Isolated integration environment; never merge this into the public demo.
+name: async-payments-test
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:15432:5432"
+  rabbitmq:
+    ports:
+      - "127.0.0.1:15673:5672"
+  api:
+    ports: !override
+      - "127.0.0.1:18000:8000"
+    environment:
+      API_KEY: local-development-key
+      DEMO_MODE: "false"
+  consumer:
+    environment:
+      API_KEY: local-development-key
+      WEBHOOK_ALLOWED_HOSTS: receiver
+  receiver:
+    image: async-payments:local
+    command: [python, /app/receiver.py]
+    volumes:
+      - ./tests/receiver.py:/app/receiver.py:ro
+    ports:
+      - "127.0.0.1:18081:8080"
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
