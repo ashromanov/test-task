@@ -4,6 +4,7 @@ import os
 import uuid
 
 from locust import FastHttpUser, constant_throughput, task
+from locust.exception import StopUser
 
 
 class PaymentsUser(FastHttpUser):
@@ -29,7 +30,7 @@ class PaymentsUser(FastHttpUser):
         ) as response:
             if response.status_code != 202:
                 response.failure(f"Expected 202, got {response.status_code}")
-                return
+                raise StopUser()
             self.payment_id = response.json()["payment_id"]
 
     @task

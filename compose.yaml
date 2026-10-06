@@ -2,7 +2,6 @@ name: async-payments
 
 x-app: &app
   image: ${APP_IMAGE:-async-payments:local}
-  build: .
   restart: unless-stopped
   init: true
   stop_grace_period: 20s
@@ -58,6 +57,7 @@ services:
 
   api:
     <<: *app
+    build: .
     command: [sh, -c, "alembic upgrade head && exec uvicorn payments.api:app --host 0.0.0.0 --port 8000 --loop uvloop --limit-concurrency 64 --no-access-log"]
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
@@ -72,6 +72,7 @@ services:
 
   consumer:
     <<: *app
+    pull_policy: never
     command: [python, -m, payments.worker]
     depends_on:
       api:

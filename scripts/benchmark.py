@@ -19,9 +19,14 @@ def run(*args, **kwargs):
 
 def measure(output: Path, duration: str):
     output.mkdir(parents=True, exist_ok=True)
+    # Only the disposable test project is reset; production volumes are never touched.
+    run(*COMPOSE, "down", "-v", stdout=subprocess.DEVNULL)
     started = time.perf_counter()
     run(*COMPOSE, "up", "-d", "--wait", stdout=subprocess.DEVNULL)
-    restart_seconds = time.perf_counter() - started
+    cold_seconds = time.perf_counter() - started
+    started = time.perf_counter()
+    run(*COMPOSE, "up", "-d", "--wait", stdout=subprocess.DEVNULL)
+    unchanged_seconds = time.perf_counter() - started
     environment = os.environ | {"API_KEY": "local-development-key"}
     for profile in ["http", "pipeline"]:
         env = environment | {"LOAD_PROFILE": profile}
@@ -61,7 +66,8 @@ def measure(output: Path, duration: str):
         "count(*) FILTER (WHERE webhook_delivered_at IS NOT NULL) AS delivered, "
         "count(*) FILTER (WHERE status='pending') AS pending, "
         "count(*) FILTER (WHERE status='succeeded') AS succeeded, "
-        "count(*) FILTER (WHERE status='failed') AS failed FROM payments;"
+        "count(*) FILTER (WHERE status='failed') AS failed FROM payments "
+        "WHERE metadata @> '{\"load_test\": true}'::jsonb;"
     )
     result = run(
         *COMPOSE,
@@ -96,7 +102,8 @@ def measure(output: Path, duration: str):
         "cpu_count": os.cpu_count(),
         "cpu": run("lscpu", capture_output=True).stdout,
         "memory": run("free", "-m", capture_output=True).stdout,
-        "compose_up_existing_stack_seconds": restart_seconds,
+        "cold_start_images_cached_seconds": cold_seconds,
+        "unchanged_compose_up_seconds": unchanged_seconds,
         "duration_per_profile": duration,
         "users": 20,
         "spawn_rate": 5,
