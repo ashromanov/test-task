@@ -9,10 +9,9 @@ from weakref import WeakValueDictionary
 from faststream import AckPolicy
 from faststream.rabbit import RabbitMessage
 from pydantic import ValidationError
-from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from payments import webhook
+from payments import outbox, webhook
 from payments.broker import (
     broker,
     dead_exchange,
@@ -22,7 +21,8 @@ from payments.broker import (
     retry_queues,
 )
 from payments.config import settings
-from payments.db import Outbox, Payment, engine, session_factory
+from payments.db import engine, session_factory
+from payments.models import Outbox, Payment
 from payments.schemas import PaymentEvent
 
 log = logging.getLogger("payments.worker")
@@ -154,46 +154,6 @@ async def handle(message: RabbitMessage) -> None:
         await message.ack()
 
 
-async def publish_batch() -> int:
-    async with session_factory.begin() as session:
-        events = (
-            await session.scalars(
-                select(Outbox)
-                .where(Outbox.published_at.is_(None))
-                .order_by(Outbox.created_at, Outbox.id)
-                .limit(settings.outbox_batch_size)
-                .with_for_update(skip_locked=True)
-            )
-        ).all()
-        for event in events:
-            await broker.publish(
-                event.payload,
-                exchange=exchange if event.routing_key != "payments.dlq" else dead_exchange,
-                routing_key=event.routing_key,
-                persist=True,
-                mandatory=True,
-                timeout=5,
-                message_id=str(event.id),
-            )
-            event.published_at = datetime.now(UTC)
-        return len(events)
-
-
-async def publish_outbox(stop: asyncio.Event) -> None:
-    idle = settings.outbox_poll_interval
-    while not stop.is_set():
-        try:
-            count = await publish_batch()
-        except Exception:
-            log.exception("outbox_publish_failed")
-            count = 0
-        idle = settings.outbox_poll_interval if count else min(idle * 2, 2)
-        if count == settings.outbox_batch_size:
-            continue
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), timeout=idle)
-
-
 async def main() -> None:
     global http
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -206,7 +166,7 @@ async def main() -> None:
             await broker.connect()
             await declare_topology()
             await broker.start()
-            publisher = asyncio.create_task(publish_outbox(stop))
+            publisher = asyncio.create_task(outbox.publish_outbox(stop))
             log.info("consumer_ready prefetch=%s", settings.consumer_prefetch)
             try:
                 await stop.wait()

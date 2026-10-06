@@ -25,10 +25,11 @@ os.environ["RABBITMQ_URL"] = f"amqp://payments:{environment['RABBITMQ_PASSWORD']
 
 from sqlalchemy import func, select
 
-from payments import worker
+from payments import outbox, worker
 from payments.broker import broker
 from payments.config import settings
-from payments.db import Outbox, Payment, engine, session_factory
+from payments.db import engine, session_factory
+from payments.models import Outbox, Payment
 from payments.schemas import PaymentEvent
 
 COMPOSE = ["docker", "compose", "-f", "compose.yaml", "-f", "compose.test.yaml"]
@@ -122,6 +123,9 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conflict.status_code, 409)
         detail = await self.client.get(f"/api/v1/payments/{payment_id}")
         self.assertEqual(detail.json()["amount"], "150.50")
+        self.assertEqual(detail.json()["payment_id"], payment_id)
+        self.assertEqual(detail.json()["metadata"], BODY["metadata"])
+        self.assertNotIn("metadata_json", detail.json())
         self.assertEqual(
             (await self.client.get(f"/api/v1/payments/{uuid.uuid4()}")).status_code, 404
         )
@@ -233,7 +237,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
             await broker.connect()
             try:
                 with self.assertRaises(aio_pika.exceptions.DeliveryError):
-                    await worker.publish_batch()
+                    await outbox.publish_batch()
             finally:
                 await broker.stop()
             async with session_factory.begin() as session:

@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 
 class Currency(StrEnum):
@@ -42,18 +42,11 @@ class PaymentCreate(BaseModel):
             raise ValueError("Webhook URL must not contain credentials or a fragment")
         return value
 
-    def db_values(self) -> dict[str, Any]:
-        return {
-            "amount": self.amount,
-            "currency": self.currency.value,
-            "description": self.description,
-            "metadata_json": self.metadata,
-            "webhook_url": str(self.webhook_url),
-        }
-
 
 class PaymentAccepted(BaseModel):
-    payment_id: UUID
+    model_config = ConfigDict(from_attributes=True)
+
+    payment_id: UUID = Field(validation_alias=AliasChoices("payment_id", "id"))
     status: Status
     created_at: datetime
 
@@ -62,7 +55,7 @@ class PaymentDetail(PaymentAccepted):
     amount: Decimal
     currency: Currency
     description: str
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(validation_alias=AliasChoices("metadata_json", "metadata"))
     idempotency_key: str
     webhook_url: str
     processed_at: datetime | None

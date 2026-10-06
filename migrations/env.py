@@ -2,7 +2,8 @@ import asyncio
 
 from alembic import context
 
-from payments.db import Base, engine
+from payments.db import engine
+from payments.models import Base
 
 
 def migrate(connection):

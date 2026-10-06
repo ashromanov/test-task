@@ -76,12 +76,33 @@ curl -sS http://localhost:8000/api/v1/payments/PAYMENT_ID \
 
 Повтор того же тела с тем же `Idempotency-Key` возвращает существующий платёж и не создаёт события. Сравнение учитывает нормализованную сумму и URL; порядок ключей JSON не важен. Изменение тела с тем же ключом возвращает `409`, неверные данные — `422`, отсутствующий/неверный API-ключ — `401`, неизвестный платёж — `404`.
 
+## Архитектура: один домен, простые модули
+
+Для этого задания выбрана **компактная feature-first архитектура**: весь код платежного домена находится в одном пакете. API и consumer — два процесса одного приложения, использующие общий образ и модели.
+
+```text
+payments/
+├── api.py        # HTTP, авторизация, ограничения, преобразование ошибок
+├── service.py    # Создание/чтение платежа, идемпотентность, атомарный Outbox
+├── schemas.py    # Входной и выходной API-контракт
+├── models.py     # ORM-модели Payment и Outbox, ограничения и индексы
+├── db.py         # Async engine и session factory
+├── worker.py     # Один обработчик: шлюз, статус, webhook, ACK/retry
+├── outbox.py     # Фоновая публикация с подтверждениями
+├── broker.py     # RabbitMQ-соединение и топология очередей
+├── webhook.py    # HTTP-доставка и проверка адресов
+└── config.py     # Настройки окружения
+```
+
+HTTP-обработчики вызывают функции `service.py`; бизнес-операции не импортируют FastAPI. SQLAlchemy выполняет роль слоя доступа к данным напрямую. Отдельный Repository с одной реализацией и иерархии `domain/application/infrastructure` для одного небольшого домена добавили бы лишний код. Границы транзакций остаются рядом с операциями, которые должны быть атомарными.
+
 ## Как проходит платёж
 
 ```mermaid
 flowchart LR
     Client[Клиент] -->|POST + API key + Idempotency key| API[FastAPI]
-    API -->|Одна транзакция| DB[(PostgreSQL<br/>payments + outbox)]
+    API --> Service[Payment service]
+    Service -->|Одна транзакция| DB[(PostgreSQL<br/>payments + outbox)]
     API -->|202 Accepted| Client
     DB --> Publisher[Outbox publisher<br/>в процессе consumer]
     Publisher -->|Persistent + mandatory + confirm| Exchange{payments<br/>direct exchange}

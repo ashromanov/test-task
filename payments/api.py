@@ -6,11 +6,11 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.security import APIKeyHeader
-from sqlalchemy import select, text
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import text
 
+from payments import service
 from payments.config import settings
-from payments.db import Outbox, Payment, engine, session_factory
+from payments.db import engine, session_factory
 from payments.schemas import PaymentAccepted, PaymentCreate, PaymentDetail
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -117,37 +117,10 @@ async def create_payment(
 ):
     if not idempotency_key.strip():
         raise HTTPException(status_code=422, detail="Idempotency-Key must not be blank")
-    values = body.db_values()
-    async with session_factory.begin() as session:
-        payment = (
-            await session.execute(
-                insert(Payment)
-                .values(**values, idempotency_key=idempotency_key)
-                .on_conflict_do_nothing(index_elements=[Payment.idempotency_key])
-                .returning(Payment)
-            )
-        ).scalar_one_or_none()
-        if payment is None:
-            payment = (
-                await session.execute(
-                    select(Payment).where(Payment.idempotency_key == idempotency_key)
-                )
-            ).scalar_one()
-            if any(getattr(payment, key) != value for key, value in values.items()):
-                raise HTTPException(status_code=409, detail="Idempotency-Key payload mismatch")
-        else:
-            session.add(
-                Outbox(
-                    payment_id=payment.id,
-                    payload={"payment_id": str(payment.id), "attempt": 1},
-                    routing_key="payments.new",
-                    attempt=1,
-                )
-            )
-        result = PaymentAccepted(
-            payment_id=payment.id, status=payment.status, created_at=payment.created_at
-        )
-    return result
+    try:
+        return await service.create_payment(body, idempotency_key)
+    except service.IdempotencyConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get(
@@ -158,20 +131,7 @@ async def create_payment(
     responses={401: {"description": "Invalid API key"}, 404: {"description": "Not found"}},
 )
 async def get_payment(payment_id: UUID):
-    async with session_factory() as session:
-        payment = await session.get(Payment, payment_id)
-        if payment is None:
-            raise HTTPException(status_code=404, detail="Payment not found")
-        return PaymentDetail(
-            payment_id=payment.id,
-            status=payment.status,
-            created_at=payment.created_at,
-            processed_at=payment.processed_at,
-            webhook_delivered_at=payment.webhook_delivered_at,
-            idempotency_key=payment.idempotency_key,
-            amount=payment.amount,
-            currency=payment.currency,
-            description=payment.description,
-            metadata=payment.metadata_json,
-            webhook_url=payment.webhook_url,
-        )
+    payment = await service.get_payment(payment_id)
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    return payment
